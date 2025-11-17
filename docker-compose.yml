@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  mosaic-ntrip-client:
+    build: .
+    container_name: mosaic-ntrip-client
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - ${UART_DEVICE}:${UART_DEVICE}
+    environment:
+      # NTRIP Caster Konfiguration
+      - NTRIP_CASTER=${NTRIP_CASTER}
+      - NTRIP_PORT=${NTRIP_PORT:-2101}
+      - NTRIP_USERNAME=${NTRIP_USERNAME}
+      - NTRIP_PASSWORD=${NTRIP_PASSWORD}
+      - NTRIP_MOUNTPOINT=${NTRIP_MOUNTPOINT}
+      
+      # UART Konfiguration
+      - UART_DEVICE=${UART_DEVICE}
+      - UART_BAUDRATE=${UART_BAUDRATE:-115200}
+      
+      # Betriebsmodus: "config" oder "stream"
+      # config: Konfiguriert das mosaic-H Modul
+      # stream: Leitet NTRIP-Daten an mosaic-H weiter
+      - OPERATION_MODE=${OPERATION_MODE:-stream}
+      
+      # mosaic-H Konfiguration (nur wenn OPERATION_MODE=config)
+      - MOSAIC_NTRIP_MODE=${MOSAIC_NTRIP_MODE:-Client}  # Client oder Server
+      - MOSAIC_NTRIP_CONNECTION=${MOSAIC_NTRIP_CONNECTION:-NTR1}  # NTR1, NTR2, NTR3
+      - MOSAIC_NTRIP_VERSION=${MOSAIC_NTRIP_VERSION:-v2}  # v1, v2, auto
+      - MOSAIC_SEND_GGA=${MOSAIC_SEND_GGA:-auto}  # off, sec1, sec5, sec10, sec60, auto
+      
+      # mosaic-H Authentifizierung (optional)
+      - MOSAIC_USERNAME=${MOSAIC_USERNAME:-}
+      - MOSAIC_PASSWORD=${MOSAIC_PASSWORD:-}
+      
+    volumes:
+      - ./config:/app/config
+      - ./logs:/app/logs
+    network_mode: host
