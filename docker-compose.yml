@@ -7,7 +7,7 @@ services:
     restart: unless-stopped
     privileged: true
     devices:
-      - ${UART_DEVICE}:${UART_DEVICE}
+      - ${UART_DEVICE}:/dev/ttyACM0
     environment:
       # NTRIP Caster Konfiguration
       - NTRIP_CASTER=${NTRIP_CASTER}
@@ -17,7 +17,8 @@ services:
       - NTRIP_MOUNTPOINT=${NTRIP_MOUNTPOINT}
       
       # UART Konfiguration
-      - UART_DEVICE=${UART_DEVICE}
+      # Host-Device wird als /dev/ttyACM0 gemountet, daher nutzt Container diesen Pfad
+      - UART_DEVICE=/dev/ttyACM0
       - UART_BAUDRATE=${UART_BAUDRATE:-115200}
       
       # Betriebsmodus: "config" oder "stream"

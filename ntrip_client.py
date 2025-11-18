@@ -75,6 +75,17 @@ class NTRIPClient:
             logger.error(f"Fehler beim Verbinden zum NTRIP Caster: {e}")
             return False
     
+    def send_gga(self, gga_sentence):
+        """GGA Position zum NTRIP Caster senden (für VRS)"""
+        try:
+            if self.socket and gga_sentence:
+                self.socket.send(gga_sentence.encode('ascii'))
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Fehler beim Senden von GGA: {e}")
+            return False
+    
     def receive_data(self, timeout=5):
         """RTCM Daten vom NTRIP Caster empfangen"""
         try:
@@ -123,6 +134,38 @@ class MosaicUARTInterface:
         except Exception as e:
             logger.error(f"Fehler beim Öffnen von {self.device}: {e}")
             return False
+    
+    def read_nmea(self, timeout=1.0):
+        """NMEA GGA Nachricht vom mosaic-H lesen"""
+        try:
+            if not self.serial or not self.serial.is_open:
+                return None
+            
+            start_time = time.time()
+            buffer = ""
+            
+            while time.time() - start_time < timeout:
+                if self.serial.in_waiting:
+                    chunk = self.serial.read(self.serial.in_waiting).decode('ascii', errors='ignore')
+                    buffer += chunk
+                    
+                    # Suche nach GGA Nachricht
+                    lines = buffer.split('\n')
+                    for line in lines:
+                        if '$GPGGA' in line or '$GNGGA' in line:
+                            # Validiere Checksum wenn vorhanden
+                            if '*' in line:
+                                line = line.strip()
+                                if not line.endswith('\r\n'):
+                                    line += '\r\n'
+                                return line
+                time.sleep(0.01)
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Fehler beim Lesen von NMEA: {e}")
+            return None
     
     def send_data(self, data):
         """Daten über UART senden"""
@@ -239,11 +282,29 @@ def stream_mode(ntrip_client, uart):
     
     bytes_received = 0
     last_log_time = time.time()
+    last_gga_time = time.time()
+    gga_interval = 5  # GGA alle 5 Sekunden senden
+    gga_sent = False
     
     try:
         while True:
+            current_time = time.time()
+            
+            # GGA Position zum Caster senden (für VRS)
+            if current_time - last_gga_time >= gga_interval:
+                gga = uart.read_nmea(timeout=0.5)
+                if gga:
+                    if ntrip_client.send_gga(gga):
+                        if not gga_sent:
+                            logger.info(f"Erste GGA Position gesendet: {gga.strip()}")
+                            gga_sent = True
+                        last_gga_time = current_time
+                else:
+                    logger.warning("Keine GGA Position vom mosaic-H empfangen")
+                    last_gga_time = current_time  # Verhindere zu häufiges Logging
+            
             # Daten vom NTRIP Caster empfangen
-            data = ntrip_client.receive_data(timeout=30)
+            data = ntrip_client.receive_data(timeout=1)
             
             if data:
                 # Daten über UART an mosaic-H senden
@@ -251,12 +312,12 @@ def stream_mode(ntrip_client, uart):
                     bytes_received += len(data)
                     
                     # Log alle 10 Sekunden
-                    current_time = time.time()
                     if current_time - last_log_time >= 10:
                         logger.info(f"RTCM Daten empfangen und weitergeleitet: {bytes_received} bytes")
                         last_log_time = current_time
-            else:
-                logger.warning("Keine Daten vom NTRIP Caster empfangen - Reconnect...")
+            elif gga_sent and current_time - last_log_time >= 30:
+                # Nur warnen wenn GGA gesendet wurde und länger keine Daten kommen
+                logger.warning("Keine RTCM Daten vom NTRIP Caster empfangen - Reconnect...")
                 return False  # Reconnect erforderlich
                 
     except KeyboardInterrupt:
