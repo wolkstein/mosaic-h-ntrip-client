@@ -250,9 +250,14 @@ def configure_mosaic_ntrip(uart, config):
     if 'mosaic_username' in config and 'mosaic_password' in config:
         uart.login(config['mosaic_username'], config['mosaic_password'])
     
-    # NMEA GGA Ausgabe auf COM1 aktivieren (für VRS NTRIP)
-    logger.info("Aktiviere NMEA GGA Ausgabe auf COM1...")
-    uart.send_command("setNMEAOutput,Stream1,GGA,sec1")
+    # NMEA GGA Ausgabe auf COM2 aktivieren (für VRS NTRIP)
+    # COM2 = UART2 Port (wo der Companion Computer angeschlossen ist)
+    logger.info("Aktiviere NMEA Ausgabe auf COM2...")
+    uart.send_command("setDataInOut,COM2,,+NMEA")
+    time.sleep(0.5)
+    
+    logger.info("Konfiguriere NMEA GGA Stream auf COM2...")
+    uart.send_command("setNMEAOutput,Stream1,COM2,GGA,sec1")
     time.sleep(0.5)
     
     connection = config['connection']
