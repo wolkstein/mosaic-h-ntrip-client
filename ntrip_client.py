@@ -260,10 +260,14 @@ def configure_mosaic_ntrip(uart, config):
     
     # Kommunikationstest mit mosaic-H
     logger.info("Teste Kommunikation mit mosaic-H...")
-    response = uart.send_command("getReceiverModel")
-    if not response or "$R:" not in response:
-        logger.error("Keine gültige Antwort vom mosaic-H erhalten!")
+    response = uart.send_command("getCOMSettings,COM2")
+    # mosaic-H antwortet mit $R: oder $R; oder $R?
+    if not response or not response.strip():
+        logger.error("Keine Antwort vom mosaic-H erhalten!")
         logger.error("Prüfe UART-Verbindung und Baudrate (sollte 115200 sein)")
+        return False
+    elif "$R?" in response and "Invalid" in response:
+        logger.error(f"mosaic-H meldet ungültigen Befehl: {response.strip()}")
         return False
     else:
         logger.info("✓ Kommunikation mit mosaic-H erfolgreich")
