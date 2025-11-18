@@ -188,21 +188,33 @@ class MosaicUARTInterface:
     def send_command(self, command):
         """Kommando an mosaic-H senden"""
         try:
+            # Puffer leeren vor dem Senden
+            if self.serial.in_waiting:
+                self.serial.reset_input_buffer()
+            
             cmd = command.strip() + "\r\n"
             logger.info(f"Sende Kommando: {command}")
             self.serial.write(cmd.encode('ascii'))
-            time.sleep(0.2)
+            self.serial.flush()
+            time.sleep(0.3)
             
             # Response lesen
             response = ""
             start_time = time.time()
-            while time.time() - start_time < 2:
+            while time.time() - start_time < 3:
                 if self.serial.in_waiting:
-                    response += self.serial.read(self.serial.in_waiting).decode('ascii', errors='ignore')
+                    chunk = self.serial.read(self.serial.in_waiting).decode('ascii', errors='ignore')
+                    response += chunk
+                    if '\n' in chunk:
+                        time.sleep(0.1)  # Kurz warten für komplette Antwort
+                        if self.serial.in_waiting == 0:
+                            break
                 time.sleep(0.1)
             
             if response:
                 logger.info(f"Response: {response.strip()}")
+            else:
+                logger.warning("Keine Response vom mosaic-H erhalten")
             return response
             
         except Exception as e:
@@ -245,6 +257,16 @@ class MosaicUARTInterface:
 def configure_mosaic_ntrip(uart, config):
     """Konfiguriert das mosaic-H Modul für NTRIP"""
     logger.info("=== Starte mosaic-H NTRIP Konfiguration ===")
+    
+    # Kommunikationstest mit mosaic-H
+    logger.info("Teste Kommunikation mit mosaic-H...")
+    response = uart.send_command("getReceiverModel")
+    if not response or "$R:" not in response:
+        logger.error("Keine gültige Antwort vom mosaic-H erhalten!")
+        logger.error("Prüfe UART-Verbindung und Baudrate (sollte 115200 sein)")
+        return False
+    else:
+        logger.info("✓ Kommunikation mit mosaic-H erfolgreich")
     
     # Optional: Login durchführen
     if 'mosaic_username' in config and 'mosaic_password' in config:
@@ -412,8 +434,11 @@ def main():
             'mosaic_username': mosaic_username,
             'mosaic_password': mosaic_password
         }
-        configure_mosaic_ntrip(uart, config)
+        success = configure_mosaic_ntrip(uart, config)
         uart.close()
+        if not success:
+            logger.error("Konfiguration fehlgeschlagen!")
+            sys.exit(1)
         logger.info("Konfiguration abgeschlossen. Container wird beendet.")
         sys.exit(0)
     
