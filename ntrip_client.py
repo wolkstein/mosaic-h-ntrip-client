@@ -14,8 +14,9 @@ import logging
 from datetime import datetime
 
 # Logging konfigurieren
+log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, log_level),
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('/app/logs/ntrip_client.log'),
@@ -135,7 +136,7 @@ class MosaicUARTInterface:
             logger.error(f"Fehler beim Öffnen von {self.device}: {e}")
             return False
     
-    def read_nmea(self, timeout=1.0):
+    def read_nmea(self, timeout=1.0, debug=False):
         """NMEA GGA Nachricht vom mosaic-H lesen"""
         try:
             if not self.serial or not self.serial.is_open:
@@ -149,6 +150,9 @@ class MosaicUARTInterface:
                     chunk = self.serial.read(self.serial.in_waiting).decode('ascii', errors='ignore')
                     buffer += chunk
                     
+                    if debug and chunk:
+                        logger.debug(f"UART empfangen: {repr(chunk[:100])}")
+                    
                     # Suche nach GGA Nachricht
                     lines = buffer.split('\n')
                     for line in lines:
@@ -160,6 +164,9 @@ class MosaicUARTInterface:
                                     line += '\r\n'
                                 return line
                 time.sleep(0.01)
+            
+            if debug and buffer:
+                logger.debug(f"Buffer enthielt keine GGA: {repr(buffer[:200])}")
             
             return None
             
@@ -282,7 +289,7 @@ def stream_mode(ntrip_client, uart):
     
     bytes_received = 0
     last_log_time = time.time()
-    last_gga_time = time.time()
+    last_gga_time = 0  # Sofort beim Start senden
     gga_interval = 5  # GGA alle 5 Sekunden senden
     gga_sent = False
     
@@ -292,7 +299,7 @@ def stream_mode(ntrip_client, uart):
             
             # GGA Position zum Caster senden (für VRS)
             if current_time - last_gga_time >= gga_interval:
-                gga = uart.read_nmea(timeout=0.5)
+                gga = uart.read_nmea(timeout=1.0, debug=(not gga_sent))
                 if gga:
                     if ntrip_client.send_gga(gga):
                         if not gga_sent:
@@ -300,7 +307,8 @@ def stream_mode(ntrip_client, uart):
                             gga_sent = True
                         last_gga_time = current_time
                 else:
-                    logger.warning("Keine GGA Position vom mosaic-H empfangen")
+                    if not gga_sent:
+                        logger.warning("Keine GGA Position vom mosaic-H empfangen - mosaic-H gibt evtl. keine NMEA Daten aus")
                     last_gga_time = current_time  # Verhindere zu häufiges Logging
             
             # Daten vom NTRIP Caster empfangen

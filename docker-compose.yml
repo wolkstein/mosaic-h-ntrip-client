@@ -36,6 +36,9 @@ services:
       - MOSAIC_USERNAME=${MOSAIC_USERNAME:-}
       - MOSAIC_PASSWORD=${MOSAIC_PASSWORD:-}
       
+      # Logging Level (DEBUG, INFO, WARNING, ERROR)
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      
     volumes:
       - ./config:/app/config
       - ./logs:/app/logs
