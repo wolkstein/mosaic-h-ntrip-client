@@ -1,56 +1,74 @@
 # mosaic-H NTRIP Docker Client - AI Agent Guide
 
 ## Project Overview
-Python-based Docker client that bridges a mosaic-H GNSS module (via UART) to an NTRIP caster for RTK correction data. Written in German but code comments/docs mix German/English.
+Python-based Docker client for Holibro mosaic-H GNSS module that provides VRS-based RTK corrections via NTRIP. Implements bidirectional communication: sends GGA position to VRS caster, receives RTCM corrections. Written in German but code comments/docs mix German/English.
+
+**Status: ✅ Productively deployed and tested (Nov 18, 2025)**
 
 ## Architecture & Key Design Decisions
 
-### System Flow
+### System Flow (VRS RTK)
 ```
-Internet (NTRIP Caster)
-    ↓ RTCM corrections
+Internet (VRS NTRIP Caster)
+    ↑ GGA Position (every 5s)
+    ↓ RTCM corrections (~9KB/10s)
 Docker Container (Python NTRIP client)
-    ↓ UART (115200 baud)
-mosaic-H GNSS Module
+    ↑ reads NMEA GGA from COM2
+    ↓ sends RTCM to COM2 (115200 baud)
+mosaic-H GNSS Module (Rover)
+    ↑ outputs GGA via COM2
+    ↓ processes RTCM for RTK
 ```
 
-**Critical: Direct RTCM forwarding approach was chosen over Point-to-Point Protocol (P2PP)**
-- P2PP would add unnecessary complexity (PPP daemon, IP routing)
-- RTCM updates only arrive every 1-5 seconds, so 50-100ms latency is negligible
-- Direct forwarding is simpler to debug and maintain
-- See `DEVELOPMENT_NOTES.md` for full rationale
+**Critical: VRS requires bidirectional communication**
+- GGA position must be sent to caster (interval: 5 seconds is sufficient for rover)
+- Caster responds with location-specific RTCM corrections
+- NMEA output must be enabled on COM2: `setNMEAOutput,Stream1,COM2,GGA,sec1`
+- Direct RTCM forwarding (no P2PP needed - simpler, equally fast)
 
 ### Two Operating Modes
 1. **config**: One-time configuration of mosaic-H module via UART commands, then exits
-2. **stream**: Continuous RTCM data relay with auto-reconnect (production mode)
+   - Enables NMEA output on COM2
+   - Configures GGA stream (1 Hz)
+   - Saves settings with `exeWriteSettings`
+2. **stream**: Continuous bidirectional data relay with auto-reconnect (production mode)
+   - Reads GGA from mosaic-H (every 5s)
+   - Sends GGA to NTRIP caster
+   - Forwards RTCM corrections to mosaic-H
 
 Mode is controlled by `OPERATION_MODE` env var in `.env` file.
 
 ## File Structure & Responsibilities
 
-- `ntrip_client.py`: Single-file application with three classes:
-  - `NTRIPClient`: HTTP-based NTRIP protocol, handles caster connection/authentication
-  - `MosaicUARTInterface`: Serial communication, sends commands and raw RTCM data
-  - Functions: `configure_mosaic_ntrip()` for config mode, `stream_mode()` for data relay
-- `docker-compose.yml`: Container orchestration, passes through UART device with `privileged: true`
+- `ntrip_client.py`: Single-file application with classes and functions:
+  - `NTRIPClient`: HTTP-based NTRIP protocol, handles caster connection/auth, sends GGA to caster
+  - `MosaicUARTInterface`: Serial communication, sends commands, reads NMEA, forwards RTCM data
+  - `configure_mosaic_ntrip()`: Config mode - sets up NMEA output and saves settings
+  - `stream_mode()`: Data relay - reads GGA, sends to caster, forwards RTCM to module
+- `docker-compose.yml`: Container orchestration, mounts `/dev/serial/by-id/*` as `/dev/ttyACM0`
 - `.env`: Configuration (not in repo, use `.env.example` as template)
-- `logs/ntrip_client.log.txt`: Application logs (dual output: file + stdout)
+- `logs/ntrip_client.log`: Application logs (dual output: file + stdout)
 
 ## Critical Patterns
 
-### UART Device Path
-**Always use `/dev/serial/by-id/` paths, never `/dev/ttyUSB0`**
+### UART Device Path & Hardware
+**Always use `/dev/serial/by-id/` paths in `.env`, mapped to `/dev/ttyACM0` in container**
 - By-ID paths are persistent across reboots/USB reconnections
-- Example: `/dev/serial/by-id/usb-Third_Element_Aviation_GmbH_3EA_USB_Mavlink_Emulator_0015871702-if00`
+- Example: `/dev/serial/by-id/usb-Third_Element_Aviation_GmbH_3EA_USB_Mavlink_Emulator_0015871742-if00`
 - Find with: `ls /dev/serial/by-id/`
-- This is documented in both README.md and `.env.example`
+- Docker maps this to `/dev/ttyACM0` inside container (not ttyUSB0!)
+- mosaic-H has COM1 (Flight Controller) and COM2 (Companion Computer) - we use COM2
 
 ### mosaic-H Communication
 - Default: Anonymous access (no login required)
 - Commands: ASCII strings terminated with `\r\n`
-- Optional login via `login,username,password` command (rarely needed)
-- Auto-detects RTCM data format on UART (no special config needed)
-- Key command: `setNTRIPSettings,<connection>,<mode>,<caster>,<port>,<user>,<pass>,<mount>`
+- Responses: `$R:` or `$R;` prefix (not consistent!)
+- Key commands:
+  - `getCOMSettings,COM2` - test communication
+  - `setDataInOut,COM2,,+NMEA` - enable NMEA output
+  - `setNMEAOutput,Stream1,COM2,GGA,sec1` - configure GGA stream
+  - `setNTRIPSettings,<conn>,<mode>,<caster>,<port>,<user>,<pass>,<mount>` - NTRIP config
+  - `exeWriteSettings` - save config permanently (not `saveConfig`!)
 
 ### NTRIP Protocol
 - HTTP/1.0 GET request with Basic Auth header

@@ -1,8 +1,59 @@
 # Development Notes - mosaic-H NTRIP Docker Client
 
-## Session vom 17. November 2025
+## 🎯 Projektziel
+Docker-Container-System für mosaic-H GNSS-Modul (Holibro) zur Verbindung mit NTRIP-Caster über UART (USB-TTL-Adapter) für VRS-basierte RTK-Korrekturdaten.
 
-### 🎯 Projektziel
+## 📅 Development Sessions
+
+### Session vom 18. November 2025 - Produktive Inbetriebnahme
+
+**Status: ✅ System erfolgreich in Betrieb genommen**
+
+#### Wichtige Erkenntnisse:
+
+**Hardware-Setup:**
+- mosaic-H hat zwei UART-Ports: COM1 (Flight Controller), COM2 (Companion Computer)
+- Verbindung über `/dev/serial/by-id/usb-Third_Element_Aviation_GmbH_3EA_USB_Mavlink_Emulator_0015871742-if00`
+- Device wird als `/dev/ttyACM0` im Container gemountet (nicht ttyUSB0!)
+- Baudrate: 115200 (Standard)
+
+**VRS NTRIP Implementierung:**
+- VRS (Virtual Reference Station) benötigt GGA-Position vom Rover
+- Implementiert: Bidirektionale Kommunikation
+  - Ausgehend: GGA-Position alle 5 Sekunden zum Caster
+  - Eingehend: RTCM-Korrekturdaten (~9 KB/10s) vom Caster
+- NMEA GGA-Stream musste auf COM2 aktiviert werden: `setNMEAOutput,Stream1,COM2,GGA,sec1`
+
+**Debugging-Prozess:**
+- mosaic-H antwortet mit `$R:` oder `$R;` (nicht konsistent)
+- Kommunikationstest via `getCOMSettings,COM2` statt ungültigem `getReceiverModel`
+- Config-Speicherung: `exeWriteSettings` (nicht `saveConfig`)
+- Direkter Terminal-Zugriff mit `minicom` half beim Debugging
+
+**Finale Konfiguration:**
+```bash
+# Config-Modus: Einmalige Setup
+OPERATION_MODE=config
+setDataInOut,COM2,,+NMEA          # NMEA-Ausgabe aktivieren
+setNMEAOutput,Stream1,COM2,GGA,sec1  # GGA jede Sekunde
+exeWriteSettings                   # Dauerhaft speichern
+
+# Stream-Modus: Produktivbetrieb
+OPERATION_MODE=stream
+gga_interval = 5  # GGA alle 5 Sekunden (ausreichend für Rover)
+```
+
+**Erfolgreiche Tests:**
+- ✅ GGA-Position wird gesendet (Fix 5 = RTK Float erreicht)
+- ✅ RTCM-Daten empfangen und weitergeleitet (~9 KB/10s)
+- ✅ System läuft stabil im Dauerbetrieb
+- ✅ Konfiguration persistiert über Reboots
+
+---
+
+### Session vom 17. November 2025 - Initial Development
+
+### 🎯 Ursprüngliches Projektziel
 Docker-Container-System für mosaic-H GNSS-Modul zur Verbindung mit NTRIP-Caster über UART (USB-TTL-Adapter).
 
 ---
