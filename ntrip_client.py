@@ -250,6 +250,11 @@ def configure_mosaic_ntrip(uart, config):
     if 'mosaic_username' in config and 'mosaic_password' in config:
         uart.login(config['mosaic_username'], config['mosaic_password'])
     
+    # NMEA GGA Ausgabe auf COM1 aktivieren (für VRS NTRIP)
+    logger.info("Aktiviere NMEA GGA Ausgabe auf COM1...")
+    uart.send_command("setNMEAOutput,Stream1,GGA,sec1")
+    time.sleep(0.5)
+    
     connection = config['connection']
     mode = config['mode']
     caster = config['caster']
@@ -279,6 +284,11 @@ def configure_mosaic_ntrip(uart, config):
     elif mode == "Server":
         cmd = f"setNTRIPSettings,{connection},{mode},{caster},{port},{username},{password},{mountpoint}"
         uart.send_command(cmd)
+    
+    # Konfiguration dauerhaft speichern
+    logger.info("Speichere Konfiguration...")
+    uart.send_command("saveConfig")
+    time.sleep(1)
     
     logger.info("=== mosaic-H NTRIP Konfiguration abgeschlossen ===")
 
