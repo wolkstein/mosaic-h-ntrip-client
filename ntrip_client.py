@@ -318,10 +318,11 @@ def configure_mosaic_ntrip(uart, config):
     
     # Konfiguration dauerhaft speichern
     logger.info("Speichere Konfiguration...")
-    uart.send_command("saveConfig")
+    uart.send_command("exeWriteSettings")
     time.sleep(1)
     
     logger.info("=== mosaic-H NTRIP Konfiguration abgeschlossen ===")
+    return True
 
 
 def stream_mode(ntrip_client, uart):
