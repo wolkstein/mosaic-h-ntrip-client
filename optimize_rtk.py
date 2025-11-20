@@ -85,8 +85,17 @@ class MosaicOptimizer:
             print(f"Fehler bei '{command}': {e}")
             return None
     
+    def disable_gga(self):
+        """GGA Output temporär deaktivieren für saubere Command-Antworten"""
+        print("Deaktiviere GGA Output...")
+        self.ser.reset_input_buffer()
+        self.ser.write(b"setDataInOut,COM2,,SBF\r\n")
+        time.sleep(0.5)
+        self.ser.reset_input_buffer()  # Verbleibende GGA Strings löschen
+        print("✓ GGA Output deaktiviert")
+    
     def restore_nmea_mode(self):
-        """COM2 zurück in NMEA-Modus"""
+        """COM2 zurück in NMEA-Output Modus"""
         self.ser.reset_input_buffer()
         self.ser.write(b"setDataInOut,COM2,,+NMEA\r\n")
         time.sleep(0.5)
@@ -98,6 +107,9 @@ class MosaicOptimizer:
         print("\n" + "="*70)
         print("  mosaic-H RTK OPTIMIERUNG")
         print("="*70)
+        
+        # GGA Output deaktivieren für saubere Command-Kommunikation
+        self.disable_gga()
         
         # Aktuelle Einstellungen lesen
         print("\n→ Lese aktuelle Einstellungen...")
@@ -141,10 +153,15 @@ class MosaicOptimizer:
             
             # Speichern
             print("\nSpeichere Einstellungen dauerhaft...")
-            save_result = self.send_command("exeWriteSettings")
-            print(save_result)
-            
-            print("\n✓ Elevation Mask auf 5° gesetzt und gespeichert!")
+            save_result = self.send_command("exeCopyConfigFile,Boot,Current")
+            if save_result:
+                print(save_result)
+                if "$R:" in save_result or "$R;" in save_result:
+                    print("\n✓ Elevation Mask auf 5° gesetzt und gespeichert!")
+                else:
+                    print("\n⚠ Speichern eventuell fehlgeschlagen, Einstellung aber aktiv")
+            else:
+                print("\n⚠ Keine Antwort beim Speichern, Einstellung aber aktiv")
         else:
             print("\n→ Übersprungen")
         
