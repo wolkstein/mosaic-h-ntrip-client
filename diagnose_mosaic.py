@@ -37,12 +37,37 @@ class MosaicDiagnose:
                 stopbits=serial.STOPBITS_ONE
             )
             print(f"✓ Verbunden mit {self.port} @ {self.baudrate} baud")
-            time.sleep(0.5)  # Zeit für Initialisierung
+            time.sleep(0.5)
+            
+            # COM2 zurück in Command-Modus zwingen (falls es in NMEA-Only Modus ist)
+            print("\nSetze COM2 in Command-Modus...")
+            self.ser.write(b"SSSSSSSSSS\r\n")  # 10x 'S' + Enter zwingt Command-Modus
+            time.sleep(0.5)
+            self.ser.reset_input_buffer()
+            
             return True
         except serial.SerialException as e:
             print(f"✗ Fehler beim Öffnen von {self.port}: {e}")
             print("\nHinweis: Docker Container stoppen mit: docker-compose down")
             return False
+    
+    def restore_nmea_mode(self):
+        """COM2 zurück in NMEA-Output Modus setzen (für Docker Container)"""
+        print("\n" + "="*70)
+        print("  COM2 wird zurück in NMEA-Modus gesetzt...")
+        print("="*70)
+        
+        # NMEA Output auf COM2 wieder aktivieren
+        self.ser.reset_input_buffer()
+        self.ser.write(b"setDataInOut,COM2,,+NMEA\r\n")
+        time.sleep(0.5)
+        
+        # GGA Stream konfigurieren
+        self.ser.write(b"setNMEAOutput,Stream1,COM2,GGA,sec1\r\n")
+        time.sleep(0.5)
+        
+        print("✓ COM2 ist wieder im NMEA-Modus")
+        print("✓ Docker Container kann jetzt gestartet werden: docker-compose up -d")
     
     def disconnect(self):
         """Verbindung trennen"""
@@ -150,7 +175,10 @@ class MosaicDiagnose:
         
         print(f"\n{'='*70}")
         print("  DIAGNOSE ABGESCHLOSSEN")
-        print(f"{'='*70}\n")
+        print(f"{'='*70}")
+        
+        # COM2 wieder in NMEA-Modus zurücksetzen
+        self.restore_nmea_mode()
 
 
 def main():
